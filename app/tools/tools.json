@@ -1,0 +1,48 @@
+[
+    {
+        "name": "get_customer",
+        "description": "Look up one customer's details (name, email, signup date) by their numeric id.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "customer_id": {
+                    "type": "integer",
+                    "description": "The customer's numeric id, e.g. 1."
+                }
+            },
+            "required": ["customer_id"]
+        }
+    },
+    {
+        "name": "list_orders",
+        "description": "List orders, most recent first. Optionally filter by customer id and/or status. Use this for questions about specific orders.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "customer_id": {
+                    "type": "integer",
+                    "description": "Only orders for this customer id. Omit for all customers."
+                },
+                "status": {
+                    "type": "string",
+                    "enum": ["pending", "shipped", "delivered", "cancelled"],
+                    "description": "Only orders with this status. Omit for all statuses."
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max orders to return. Defaults to 10."
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "revenue_by_product",
+        "description": "Total revenue and units sold per product across all non-cancelled orders. Use for questions about sales, revenue, or best-selling products.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    }
+]

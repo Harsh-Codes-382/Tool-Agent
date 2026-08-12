@@ -1,0 +1,28 @@
+services:
+  db:    
+    image: postgres:17-alpine
+    container_name: shop-pg
+    environment:
+      # User and DB default to "postgres", matching your DATABASE_URL.
+      POSTGRES_PASSWORD: dev
+    ports:
+      - "5432:5432"
+    volumes:
+      # Bind-mounted instead of COPY'd — edit schema.sql and it's picked up on
+      # the next fresh start, no rebuild. Read-only; the entrypoint only reads it.
+      - ./schema.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+      # Named volume so data survives `docker compose down`.
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # `docker compose up --wait` blocks until this passes, so your app never
+      # connects mid-initdb. Note pg_isready goes green *before* the seed
+      # scripts run on first boot — see the caveat below.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  pgdata:
