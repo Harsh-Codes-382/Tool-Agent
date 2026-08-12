@@ -1,7 +1,7 @@
 [
     {
         "name": "get_customer",
-        "description": "Look up one customer's details (name, email, signup date) by their numeric id.",
+        "description": "Look up one customer's full details (name, email, signup date) by their numeric id. Only use this when you already have the id. If you only know the customer's name, call search_customers first to get the id.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -10,7 +10,9 @@
                     "description": "The customer's numeric id, e.g. 1."
                 }
             },
-            "required": ["customer_id"]
+            "required": [
+                "customer_id"
+            ]
         }
     },
     {
@@ -25,7 +27,12 @@
                 },
                 "status": {
                     "type": "string",
-                    "enum": ["pending", "shipped", "delivered", "cancelled"],
+                    "enum": [
+                        "pending",
+                        "shipped",
+                        "delivered",
+                        "cancelled"
+                    ],
                     "description": "Only orders with this status. Omit for all statuses."
                 },
                 "limit": {
@@ -42,6 +49,58 @@
         "input_schema": {
             "type": "object",
             "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "search_customers",
+        "description": "Find customers by name when you do NOT already know their numeric id. Matches any part of the name, case-insensitive, so \"acme\" finds \"Acme Corp\". Returns each match's id, which you can then pass to tools that need one. Use this first whenever a question names a customer in words rather than by id.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name_contains": {
+                    "type": "string",
+                    "description": "Part or all of the customer's name, e.g. \"acme\"."
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max customers to return. Defaults to 10."
+                }
+            },
+            "required": [
+                "name_contains"
+            ]
+        }
+    },
+    {
+        "name": "list_products",
+        "description": "List products in the catalogue with their price in cents and current stock level. Use for questions about what is sold, what something costs, or what is in stock. This does NOT include sales figures - for revenue or units sold, use revenue_by_product.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "in_stock_only": {
+                    "type": "boolean",
+                    "description": "If true, only products with stock above zero. Defaults to false."
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max products to return. Defaults to 20."
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "top_customers",
+        "description": "Rank customers by total amount spent across all non-cancelled orders, highest first. Use for questions about the biggest, best, or most valuable customers. For a per-product breakdown instead of per-customer, use revenue_by_product.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "How many customers to return. Defaults to 5."
+                }
+            },
             "required": []
         }
     }

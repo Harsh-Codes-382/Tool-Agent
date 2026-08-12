@@ -50,6 +50,66 @@ def revenue_by_product() -> list[dict]:
     )
 
 
+def search_customers(name_contains: str, limit: int = 10) -> list[dict]:
+    """SEARCH: customers whose name contains the given text, case-insensitive."""
+    return run_query(
+        """ 
+        SELECT id, name, email, created_at
+        FROM customers
+        WHERE name ILIKE %s
+        ORDER BY name
+        LIMIT %s
+        """,
+        # The % wildcards belong in the PARAMETER, not the SQL string.
+        # psycopg escapes the value, so a name of "'; DROP TABLE--" is
+        # searched for literally. Writing ILIKE '%{name}%' as an f-string
+        # would be the injection hole this whole design avoids.
+        (f"%{name_contains}%", limit),
+    )
+
+def list_products(in_stock_only: bool = False, limit: int = 20) -> list[dict]:
+    """FILTERED LIST: products with price and current stock level."""
+    sql = """                                                                  
+        SELECT id, name, price_cents, stock
+        FROM products
+        WHERE TRUE
+    """
+    params = []
+
+    # No param appended here — the condition is a fixed literal, not a
+    # value. The WHERE TRUE + append pattern handles both kinds.
+    if in_stock_only:
+        sql += " AND stock > 0"
+
+    sql += " ORDER BY name LIMIT %s"
+    params.append(limit)
+
+    return run_query(sql, tuple(params))
+
+def top_customers(limit: int = 5) -> list[dict]:
+    """AGGREGATE: customers ranked by total spend, ignoring cancelled orders."""
+    return run_query(
+        """
+        SELECT c.name AS customer,
+                COUNT(o.id)                      AS order_count,
+                SUM(o.quantity)                  AS units_bought,
+                SUM(o.quantity * p.price_cents)  AS spend_cents
+        FROM orders o
+        JOIN customers c ON c.id = o.customer_id
+        JOIN products  p ON p.id = o.product_id
+        WHERE o.status <> 'cancelled'
+        GROUP BY c.name
+        ORDER BY spend_cents DESC
+        LIMIT %s
+        """,
+        (limit,),
+    )
+
+
+
+
+
+
 
 
 

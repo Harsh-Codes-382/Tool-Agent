@@ -1,7 +1,9 @@
-from app.tools import handlers
-
 from pathlib import Path
 import json
+
+from app.tools import handlers
+from app.validation import ValidationError, validate
+
 
 TOOLS_PATH = Path(__file__).parent / 'tools.json'
 
@@ -14,9 +16,12 @@ HANDLERS = {
     "get_customer": handlers.get_customer,
     "list_orders": handlers.list_orders,
     "revenue_by_product": handlers.revenue_by_product,
+    "search_customers": handlers.search_customers,
+    "list_products": handlers.list_products,
+    "top_customers": handlers.top_customers,
 }
 
-def dispatch(name: str, tool_inpput: dict) -> dict:
+def dispatch(name: str, tool_input: dict) -> dict:
     """Run one tool call and ALWAYS return a string.
 
     Contract: this never raises. Every failure becomes a message the model
@@ -34,7 +39,15 @@ def dispatch(name: str, tool_inpput: dict) -> dict:
         }
 
     try:
-        output = fn(**tool_inpput)
+        clean_input = validate(name, tool_input)
+        output = fn(**clean_input)
+
+
+    except ValidationError as ve:
+        return {
+            "content": f"Error: invalid arguments for {name}: {ve}",
+            "is_error": True
+        }
 
     # Argument mismatch: unexpected keyword, or a required one missing.
     except TypeError as e:
