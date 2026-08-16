@@ -31,12 +31,21 @@ def __degrade(reason: str, messages: list) -> str:
 
     return f"[stopped: {reason}]" + (f"\n\n{partial}" if partial else "")
 
-def run_agent(user_que: str) -> str:
+def run_agent(user_que: str, *, tools=None, system=None, dispatch_fn = None) -> str:
     messages = [{'role': "user", "content": user_que}]
     output_spent = 0
 
+    if tools is None:
+        tools = TOOLS
+    if system is None:
+        system = SYSTEM
+    if dispatch_fn is None:
+        dispatch_fn = dispatch
+
+    
+
     for step in range(1, MAX_ITERATIONS+1):
-        resp = call_model(messages=messages, tools=TOOLS, system=SYSTEM)
+        resp = call_model(messages=messages, tools=tools, system=system)
 
         u = resp.usage
         output_spent += u.output_tokens
@@ -76,7 +85,7 @@ def run_agent(user_que: str) -> str:
 
         for block in resp.content:
             if block.type == "tool_use":
-                result = dispatch(block.name, block.input)
+                result = dispatch_fn(block.name, block.input)
                 results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,
