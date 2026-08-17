@@ -4,8 +4,55 @@ from app.tools.registry import dispatch, TOOLS
 
 MAX_ITERATIONS = 10        # model calls per question
 MAX_OUTPUT_TOKENS = 20_000 # cumulative output budget across the whole run
+MAX_REFLECT = 2
 
 SYSTEM = "You answer questions about our store using the provided tools. Only state facts the tool results support."
+
+REFLECT_SYSTEM = (
+    "You are a strict reviewer. You are given a user's QUESTION and a DRAFT "
+    "ANSWER from an assistant. Judge ONLY whether the draft completely answers "
+    "the question: every part addressed, specific (no vague hedging), and not a "
+    "partial or aborted answer. Do NOT rewrite it.\n"
+    "Reply with ONE JSON object and nothing else:\n"
+    '  {"ok": true}                        if the draft is complete, or\n'
+    '  {"ok": false, "fix": "<the gap, as an instruction to fix it>"}\n'
+    "Be conservative: if it answers the question, say ok. Only fail it for a "
+    "real gap the assistant could close with more work."
+)
+
+def __reflect(question: str, draft: str) -> dict:
+    """One independent critique pass. Returns {"ok": bool, "fix": str, "usage": ...}.
+
+    Runs as a SEPARATE, tool-less model call with a fresh two-message context —
+    not the actor's own transcript — so it's a cheap, genuinely independent check
+    rather than the model rubber-stamping its own history.
+
+    Fails OPEN: if the verdict won't parse, we treat the draft as acceptable.
+    Reflection is an enhancement, never a gate that can trap a good answer
+    behind a malformed critique.
+    """
+    review = [{
+        "role": "user",
+        "content": f"QUESTION:\n{question}\n\nDRAFT ANSWER:\n{draft}",
+    }]
+    resp = call_model(messages=review, system=REFLECT_SYSTEM)   # no tools
+    text = "".join(b.text for b in resp.content if b.type == "text").strip()
+
+    try:
+        verdict = json.loads(text)
+        result = {
+            "ok": bool(verdict.get("ok", True)),
+            "fix": str(verdict.get("fix", "")),
+            "usage": resp.usage,
+        }
+
+        print(f"  [reflect] ok={result['ok']} fix={result['fix'][:60]!r}")
+        return result
+    except (json.JSONDecodeError, AttributeError):
+        print("  [reflect] unparseable verdict → failing open (ok=True)")
+        return {"ok": True, "fix": "", "usage": resp.usage}
+
+    
 
 def __degrade(reason: str, messages: list) -> str:
     """Stop early and hand back whatever the model already produced.
@@ -34,6 +81,7 @@ def __degrade(reason: str, messages: list) -> str:
 def run_agent(user_que: str, *, tools=None, system=None, dispatch_fn = None) -> str:
     messages = [{'role': "user", "content": user_que}]
     output_spent = 0
+    reflect_rounds = 0
 
     if tools is None:
         tools = TOOLS
@@ -71,7 +119,30 @@ def run_agent(user_que: str, *, tools=None, system=None, dispatch_fn = None) -> 
 
         # Normal finish (end_turn / stop_sequence).
         if resp.stop_reason != "tool_use":
-            return "".join(b.text for b in resp.content if b.type == "text")
+            draft = "".join(b.text for b in resp.content if b.type == "text")
+            if reflect_rounds >= MAX_REFLECT:
+                return draft
+
+            verdict = __reflect(user_que, draft)   # ← HERE — the only call
+            output_spent += verdict["usage"].output_tokens
+
+            if verdict["ok"]:
+                return draft
+
+            # Draft failed review. Keep it, feed the critique back as a fresh
+            # user turn, and let the loop continue — the model can call more
+            # tools or rewrite. reflect_rounds bounds this; MAX_ITERATIONS again.
+            reflect_rounds += 1
+            messages.append({"role": "assistant", "content": resp.content})
+            messages.append({
+                "role": "user",
+                "content": (
+                    "A reviewer found this answer incomplete:\n"
+                    f"{verdict['fix']}\n\n"
+                    "Close the gap (use the tools if needed), then give the full answer."
+                ),
+            })
+            continue
 
 
         # Budget check goes HERE: we know more work is coming, so stop
