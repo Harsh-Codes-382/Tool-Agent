@@ -54,6 +54,29 @@ SUPERVISOR_TOOLS = [
     },
 ]
 
+PLANNER_SYSTEM = (
+    "You are a planner. Given the user's question, write a SHORT ordered plan for "
+    "how a supervisor should answer it, using two specialists:\n"
+    "  - store agent: our database (customers, orders, products)\n"
+    "  - web agent: live/external info from a public web page (needs a URL)\n"
+    "Output 1-4 numbered steps. Each step names the specialist and its sub-question, "
+    "or says 'synthesize'. If one specialist can answer it alone, say so in one step. "
+    "Do NOT answer the question yourself — only plan. Keep it terse."
+)
+
+def __plan(question: str) -> str:
+    """Produce an explicit ordered plan BEFORE any delegation.
+
+    Tool-less, fresh single-message context — cheap and independent of the
+    supervisor's own loop, same shape as __reflect in agent.py. Returns the
+    plan as plain text. It's ADVISORY: the supervisor is told to follow it but
+    may adapt when a real result demands it.
+    """
+    resp = call_model(
+        messages=[{"role": "user", "content": question}],
+        system=PLANNER_SYSTEM,   # no tools
+    )
+    return "".join(b.text for b in resp.content if b.type == "text").strip()
 
 async def on_progress(progress: float, total: float | None, message: str | None) -> None:
     pct = f"{progress:.0f}/{total:.0f}" if total else f"{progress:.0f}"
@@ -152,8 +175,18 @@ def supervisor_dispatch(name: str, tool_input: dict) -> dict:
 
 
 def run_supervisor(question: str) -> str:
+    # Look FORWARD first: write the plan before touching a single specialist.
+    plan = __plan(question)
+    print(f"[plan]\n{plan}\n")
+
+    augmented = (
+        f"{question}\n\n"
+        f"Suggested plan (follow it, but adapt if a result requires it):\n{plan}"
+    )
+
+
     return run_agent(
-        question,
+        augmented,
         tools=SUPERVISOR_TOOLS,
         system=SUPERVISOR_SYSTEM,
         dispatch_fn=supervisor_dispatch,
