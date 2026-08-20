@@ -4,7 +4,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from app.llm import call_model
 from app.agent import run_agent
-from app.tools.registry import TOOLS, dispatch
+from app.tools.registry import TOOLS, scope_denial
 import concurrent.futures
 
 MCP_URL = "http://127.0.0.1:8000/mcp"
@@ -64,6 +64,9 @@ PLANNER_SYSTEM = (
     "Do NOT answer the question yourself — only plan. Keep it terse."
 )
 
+STORE_SCOPE = {t["name"] for t in TOOLS}                  # all store tools, incl. cancel_order
+SUPERVISOR_SCOPE = {t["name"] for t in SUPERVISOR_TOOLS}
+
 def __plan(question: str) -> str:
     """Produce an explicit ordered plan BEFORE any delegation.
 
@@ -85,10 +88,10 @@ async def on_progress(progress: float, total: float | None, message: str | None)
 
 def store_agent(question: str, confirm_fn) -> str:
     # No overrides -> uses the store defaults (TOOLS, dispatch).
-    return run_agent(question, system=STORE_SYSTEM, confirm_fn=confirm_fn)
+    return run_agent(question, system=STORE_SYSTEM, confirm_fn=confirm_fn, scope=STORE_SCOPE)
 
 def web_agent(question: str, confirm_fn) -> str:
-    return run_agent(question, tools=web_tool_schema(), system=WEB_SYSTEM, dispatch_fn=web_dispatch, confirm_fn=confirm_fn)
+    return run_agent(question, tools=web_tool_schema(), system=WEB_SYSTEM, dispatch_fn=web_dispatch, confirm_fn=confirm_fn, scope=SUPERVISOR_SCOPE)
 
 def _run_async(coro):
     """Drive an async coroutine to completion from sync code, whether or
@@ -108,11 +111,13 @@ def _run_async(coro):
     with concurrent.futures.ThreadPoolExecutor(1) as pool:
         return pool.submit(asyncio.run, coro).result()
 
+
 async def _list_tools():
     async with streamable_http_client(MCP_URL) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             return (await session.list_tools()).tools
+
 
 async def _call_tool(name: str, args: dict):
     async with streamable_http_client(MCP_URL) as (read, write):
@@ -137,9 +142,14 @@ def web_tool_schema() -> list:
     ]
 
 
-def web_dispatch(name: str, tool_input: dict, confirm_fn = None) -> dict:
+def web_dispatch(name: str, tool_input: dict, confirm_fn = None, scope = None) -> dict:
     """Relay one MCP tool call. Same {content, is_error} contract as
     registry.dispatch — so agent_loop can't tell the two apart."""
+
+    denied = scope_denial(name=name, scope=scope)
+    if denied:
+        return denied
+    
     try:
         result = _run_async(_call_tool(name, tool_input))
     except Exception as e:
@@ -157,10 +167,15 @@ def web_dispatch(name: str, tool_input: dict, confirm_fn = None) -> dict:
 
 
 
-def supervisor_dispatch(name: str, tool_input: dict, confirm_fn=None) -> dict:
+def supervisor_dispatch(name: str, tool_input: dict, confirm_fn=None, scope = None) -> dict:
     """Route a supervisor 'tool call' to a real specialist. The specialist
     runs a whole agent loop; its final string is the tool result. Same
     {content, is_error} contract as every other dispatch."""
+
+    denied = scope_denial(name=name, scope=scope)
+    if denied:
+        return denied
+    
     question = tool_input.get("question", "")
     try:
         if name == "ask_store_agent":

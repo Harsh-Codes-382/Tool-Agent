@@ -23,13 +23,39 @@ HANDLERS = {
     "cancel_order": handlers.cancel_order
 }
 
-def dispatch(name: str, tool_input: dict, confirm_fn = None) -> dict:
+def scope_denial(name: str, scope) -> dict | None:
+    """Least-privilege gate. Return a fail-closed tool_result if `name` is
+    outside this caller's `scope`, else None to let the call proceed.
+
+    scope=None means 'unrestricted' — kept for the single-agent CLI path,
+    where run_agent has no supervisor handing it a scope. Every multi-agent
+    caller passes an explicit set, so a tool the caller was never granted
+    can't run even if the model (or an injected instruction) emits it.
+    """
+    if scope is not None and name not in scope:
+        # Logged so the eval/attack set can ASSERT the gate fired, not just
+        # that the run happened to not cancel anything.
+        print(f"[SCOPE DENIED] tool={name!r} not in caller scope={sorted(scope)}")
+        return {
+            "content": f"Error: tool {name!r} is not permitted for this agent.",
+            "is_error": True,
+        }
+    return None
+
+
+def dispatch(name: str, tool_input: dict, confirm_fn = None, scope = None) -> dict:
     """Run one tool call and ALWAYS return a string.
 
     Contract: this never raises. Every failure becomes a message the model
     can read on its next turn, so a bad tool call costs one iteration
     instead of killing the whole run.
     """
+
+    denied =  scope_denial(name=name, scope=scope)
+    if denied:
+        return denied
+
+    
 
     fn = HANDLERS.get(name)
 

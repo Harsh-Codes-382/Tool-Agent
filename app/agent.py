@@ -78,7 +78,7 @@ def __degrade(reason: str, messages: list) -> str:
 
     return f"[stopped: {reason}]" + (f"\n\n{partial}" if partial else "")
 
-def run_agent(user_que: str, *, tools=None, system=None, dispatch_fn = None, confirm_fn = None) -> str:
+def run_agent(user_que: str, *, tools=None, system=None, dispatch_fn = None, confirm_fn = None, scope = None) -> str:
     messages = [{'role': "user", "content": user_que}]
     output_spent = 0
     reflect_rounds = 0
@@ -156,7 +156,7 @@ def run_agent(user_que: str, *, tools=None, system=None, dispatch_fn = None, con
 
         for block in resp.content:
             if block.type == "tool_use":
-                result = dispatch_fn(block.name, block.input, confirm_fn=confirm_fn)
+                result = dispatch_fn(block.name, block.input, confirm_fn=confirm_fn, scope=scope)
                 results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,
