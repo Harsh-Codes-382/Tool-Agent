@@ -78,7 +78,7 @@ def __degrade(reason: str, messages: list) -> str:
 
     return f"[stopped: {reason}]" + (f"\n\n{partial}" if partial else "")
 
-def run_agent(user_que: str, *, tools=None, system=None, dispatch_fn = None) -> str:
+def run_agent(user_que: str, *, tools=None, system=None, dispatch_fn = None, confirm_fn = None) -> str:
     messages = [{'role': "user", "content": user_que}]
     output_spent = 0
     reflect_rounds = 0
@@ -156,7 +156,7 @@ def run_agent(user_que: str, *, tools=None, system=None, dispatch_fn = None) -> 
 
         for block in resp.content:
             if block.type == "tool_use":
-                result = dispatch_fn(block.name, block.input)
+                result = dispatch_fn(block.name, block.input, confirm_fn=confirm_fn)
                 results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,
@@ -170,10 +170,22 @@ def run_agent(user_que: str, *, tools=None, system=None, dispatch_fn = None) -> 
     return __degrade(f"hit MAX_ITERATIONS ({MAX_ITERATIONS})", messages)
 
 
+def cli_confirm(name: str, args: dict) -> bool:
+    """Interactive human confirmation for a state-changing tool.
+
+    Fail closed: only an explicit 'y'/'yes' approves. Just pressing Enter,
+    or anything else, is a no. This is the human-in-the-loop for writes.
+    """
+    arg_str = ", ".join(f"{k}={v!r}" for k, v in args.items())
+    print("\n  ⚠  The agent wants to run a state-changing tool:")
+    print(f"       {name}({arg_str})")
+    return input("     Approve? [y/N] ").strip().lower() in {"y", "yes"}
+
+
 if __name__ == "__main__":
     import sys
     question = " ".join(sys.argv[1:]) or "What are our best-selling products?"
     print(f"Q: {question}\n")
-    print(run_agent(question))
+    print(run_agent(question, confirm_fn=cli_confirm))
 
     

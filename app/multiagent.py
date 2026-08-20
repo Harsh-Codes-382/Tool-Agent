@@ -83,12 +83,12 @@ async def on_progress(progress: float, total: float | None, message: str | None)
     print(f"  [progress {pct}] {message or ''}")
 
 
-def store_agent(question: str) -> str:
+def store_agent(question: str, confirm_fn) -> str:
     # No overrides -> uses the store defaults (TOOLS, dispatch).
-    return run_agent(question, system=STORE_SYSTEM)
+    return run_agent(question, system=STORE_SYSTEM, confirm_fn=confirm_fn)
 
-def web_agent(question: str) -> str:
-    return run_agent(question, tools=web_tool_schema(), system=WEB_SYSTEM, dispatch_fn=web_dispatch)
+def web_agent(question: str, confirm_fn) -> str:
+    return run_agent(question, tools=web_tool_schema(), system=WEB_SYSTEM, dispatch_fn=web_dispatch, confirm_fn=confirm_fn)
 
 def _run_async(coro):
     """Drive an async coroutine to completion from sync code, whether or
@@ -137,7 +137,7 @@ def web_tool_schema() -> list:
     ]
 
 
-def web_dispatch(name: str, tool_input: dict) -> dict:
+def web_dispatch(name: str, tool_input: dict, confirm_fn = None) -> dict:
     """Relay one MCP tool call. Same {content, is_error} contract as
     registry.dispatch — so agent_loop can't tell the two apart."""
     try:
@@ -157,16 +157,16 @@ def web_dispatch(name: str, tool_input: dict) -> dict:
 
 
 
-def supervisor_dispatch(name: str, tool_input: dict) -> dict:
+def supervisor_dispatch(name: str, tool_input: dict, confirm_fn=None) -> dict:
     """Route a supervisor 'tool call' to a real specialist. The specialist
     runs a whole agent loop; its final string is the tool result. Same
     {content, is_error} contract as every other dispatch."""
     question = tool_input.get("question", "")
     try:
         if name == "ask_store_agent":
-            return {"content": store_agent(question), "is_error": False}
+            return {"content": store_agent(question, confirm_fn), "is_error": False}
         if name == "ask_web_agent":
-            return {"content": web_agent(question), "is_error": False}
+            return {"content": web_agent(question, confirm_fn), "is_error": False}
         return {"content": f"Error: unknown specialist {name!r}.", "is_error": True}
     except Exception as e:
         # A specialist blowing up is one bad tool result, not a dead run.
@@ -174,7 +174,7 @@ def supervisor_dispatch(name: str, tool_input: dict) -> dict:
 
 
 
-def run_supervisor(question: str) -> str:
+def run_supervisor(question: str, confirm_fn = None) -> str:
     # Look FORWARD first: write the plan before touching a single specialist.
     plan = __plan(question)
     print(f"[plan]\n{plan}\n")
@@ -190,12 +190,14 @@ def run_supervisor(question: str) -> str:
         tools=SUPERVISOR_TOOLS,
         system=SUPERVISOR_SYSTEM,
         dispatch_fn=supervisor_dispatch,
+        confirm_fn=confirm_fn
     )
 
 if __name__ == "__main__":
     import sys
+    from app.agent import cli_confirm
     question = " ".join(sys.argv[1:]) or "Who are our top customers?"
     print(f"Q: {question}\n")
-    print(run_supervisor(question))
+    print(run_supervisor(question, confirm_fn=cli_confirm))
 
 

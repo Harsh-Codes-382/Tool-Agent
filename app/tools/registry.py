@@ -7,6 +7,7 @@ from app.validation import ValidationError, validate
 
 TOOLS_PATH = Path(__file__).parent / 'tools.json'
 
+WRITE_TOOLS = {"cancel_order"}
 
 with TOOLS_PATH.open() as f:
     TOOLS = json.load(f)
@@ -19,9 +20,10 @@ HANDLERS = {
     "search_customers": handlers.search_customers,
     "list_products": handlers.list_products,
     "top_customers": handlers.top_customers,
+    "cancel_order": handlers.cancel_order
 }
 
-def dispatch(name: str, tool_input: dict) -> dict:
+def dispatch(name: str, tool_input: dict, confirm_fn = None) -> dict:
     """Run one tool call and ALWAYS return a string.
 
     Contract: this never raises. Every failure becomes a message the model
@@ -40,14 +42,24 @@ def dispatch(name: str, tool_input: dict) -> dict:
 
     try:
         clean_input = validate(name, tool_input)
-        output = fn(**clean_input)
-
-
     except ValidationError as ve:
         return {
             "content": f"Error: invalid arguments for {name}: {ve}",
             "is_error": True
         }
+
+    if name in WRITE_TOOLS:
+        approved = bool(confirm_fn and confirm_fn(name, clean_input))
+        if not approved:
+            return {
+                # is_error=False: a denial is a normal outcome for the model to
+                # RELAY ("I didn't cancel it"), not a bug for it to retry.
+                "content": f"[not executed: '{name}' changes data and needs confirmation, which was not granted]",
+                "is_error": False,
+            }
+
+    try:
+        output = fn(**clean_input)
 
     # Argument mismatch: unexpected keyword, or a required one missing.
     except TypeError as e:

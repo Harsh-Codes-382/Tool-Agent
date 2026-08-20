@@ -107,6 +107,10 @@ def _top_customers(args: dict) -> dict:
     return {"limit": _clamped_limit(args.get("limit"), 5)}
 
 
+def _cancel_order(args: dict) -> dict:
+    return {"order_id": _positive_int(_require(args, "order_id"), "order_id")}
+
+
 VALIDATORS = {
     "get_customer": _get_customer,
     "list_orders": _list_orders,
@@ -114,6 +118,7 @@ VALIDATORS = {
     "search_customers": _search_customers,
     "list_products": _list_products,
     "top_customers": _top_customers,
+    "cancel_order": _cancel_order
 }
 
 

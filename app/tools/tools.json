@@ -103,5 +103,19 @@
             },
             "required": []
         }
+    },
+    {
+        "name": "cancel_order",
+        "description": "Cancel a single PENDING order by its numeric id. This CHANGES data: it sets the order's status to 'cancelled' and cannot be undone. Only orders still in 'pending' status can be cancelled - shipped, delivered, or already-cancelled orders cannot. Use only when the user has clearly asked to cancel a specific order and you know its numeric id (call list_orders first if you only have a customer name).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "order_id": {
+                    "type": "integer",
+                    "description": "The numeric id of the order to cancel, e.g. 2."
+                }
+            },
+            "required": ["order_id"]
+        }
     }
 ]
