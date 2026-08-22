@@ -91,7 +91,9 @@ def store_agent(question: str, confirm_fn) -> str:
     return run_agent(question, system=STORE_SYSTEM, confirm_fn=confirm_fn, scope=STORE_SCOPE)
 
 def web_agent(question: str, confirm_fn) -> str:
-    return run_agent(question, tools=web_tool_schema(), system=WEB_SYSTEM, dispatch_fn=web_dispatch, confirm_fn=confirm_fn, scope=SUPERVISOR_SCOPE)
+    schema = web_tool_schema()                       # one MCP list_tools call
+    web_scope = {t["name"] for t in schema}
+    return run_agent(question, tools=schema, system=WEB_SYSTEM, dispatch_fn=web_dispatch, confirm_fn=confirm_fn, scope=web_scope)
 
 def _run_async(coro):
     """Drive an async coroutine to completion from sync code, whether or
